@@ -1,0 +1,19 @@
+# Environment variables
+.env
+
+# Credentials (JSON service accounts, etc.)
+credentials/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Data outputs
+data/
