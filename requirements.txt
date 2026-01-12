@@ -1,5 +1,5 @@
 # Telegram Bot
-python-telegram-bot==21.3
+python-telegram-bot==22.5
 
 # Groq (Llama 3.3 - classification)
 groq==0.37.1
