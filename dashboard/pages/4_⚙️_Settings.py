@@ -71,7 +71,7 @@ def render_scraping_controls():
 
     with col2:
         st.markdown("### 🚀 Indie Hackers")
-        st.markdown("Scrape from Indie Hackers website → Cache in session")
+        st.markdown("Scrape from Indie Hackers website → Store in Supabase → Classify with AI")
 
         indie_limit = st.number_input(
             "Number of products",
@@ -165,42 +165,97 @@ def scrape_product_hunt(limit: int):
 
 
 def scrape_indie_hackers(limit: int):
-    """Run Indie Hackers scraping."""
+    """Run Indie Hackers scraping with DB persistence and classification."""
     from scraper.indiehackers import IndieHackersClient
+    from database.repositories.indie import IndieProductsRepository
+    from agents import ClassifierAgent
 
     progress = st.progress(0, text="Launching browser...")
 
     try:
+        config = get_config()
+
+        # Step 1: Scrape
         async def do_scrape():
             client = IndieHackersClient(headless=True)
             try:
                 products = await client.get_products(limit=limit)
-                return [p.to_dict() for p in products]
+                return products  # Return IndieProduct objects
             finally:
                 await client.close()
 
-        progress.progress(30, text="Scraping products...")
-
+        progress.progress(20, text="Scraping products...")
         products = run_async(do_scrape())
 
+        progress.progress(40, text="Storing in database...")
+
+        # Step 2: Store in Supabase
+        indie_repo = IndieProductsRepository()
+        stored = run_async(indie_repo.insert_products(products))
+
+        progress.progress(50, text="Classifying products...")
+
+        # Step 3: Classify unclassified products
+        classifier = ClassifierAgent(api_key=config.groq.api_key)
+        unclassified = run_async(indie_repo.get_unclassified())
+
+        b2b_count = 0
+        b2c_count = 0
+
+        for i, product in enumerate(unclassified):
+            progress.progress(
+                50 + int(40 * (i + 1) / max(len(unclassified), 1)),
+                text=f"Classifying {i+1}/{len(unclassified)}..."
+            )
+            business_type, reason = run_async(classifier.classify(
+                name=product.get("name", ""),
+                tagline=product.get("tagline", ""),
+                description=product.get("tagline", ""),
+            ))
+            run_async(indie_repo.update_classification(
+                product.get("id"), business_type, reason
+            ))
+            if business_type.value == "B2B":
+                b2b_count += 1
+            elif business_type.value == "B2C":
+                b2c_count += 1
+
+        # Convert to dicts for cache
+        products_dict = [p.to_dict() if hasattr(p, 'to_dict') else p for p in products]
+
         # Add source field
-        for p in products:
+        for p in products_dict:
             p["_source"] = "Indie Hackers"
 
-        # Update cache
-        st.session_state.indie_cache = products
+        # Update session cache (bonus for fast display)
+        st.session_state.indie_cache = products_dict
         st.session_state.last_indie_scrape = datetime.now()
 
         progress.progress(100, text="Complete!")
 
         st.success(f"Scraped {len(products)} products from Indie Hackers!")
 
+        # Show detailed results
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Scraped", len(products))
+        with col2:
+            st.metric("Stored", stored)
+        with col3:
+            st.metric("B2B", b2b_count)
+        with col4:
+            st.metric("B2C", b2c_count)
+
         # Show preview
-        if products:
+        if products_dict:
             st.markdown("### Preview (Top 5)")
-            for p in products[:5]:
+            for p in products_dict[:5]:
                 verified = "✅" if p.get("stripe_verified") else ""
-                st.markdown(f"- **{p.get('name')}** - {p.get('revenue', 'N/A')} {verified}")
+                btype = p.get("business_type", "UNKNOWN")
+                st.markdown(f"- **{p.get('name')}** [{btype}] - {p.get('revenue', 'N/A')} {verified}")
+
+        # Clear cache to refresh data in other pages
+        st.cache_data.clear()
 
     except Exception as e:
         progress.empty()
