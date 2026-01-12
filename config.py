@@ -12,6 +12,19 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env", override=True)
 
 
+def _get_secret(key: str, default: str = "") -> str:
+    """Get secret from Streamlit secrets or environment variables."""
+    # Try Streamlit secrets first (for Streamlit Cloud)
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+    # Fallback to environment variable
+    return os.getenv(key, default)
+
+
 @dataclass
 class TelegramConfig:
     bot_token: str
@@ -87,8 +100,8 @@ def load_config() -> Config:
             api_key=os.getenv("GEMINI_API_CENTRAL_KEY", ""),
         ),
         supabase=SupabaseConfig(
-            url=os.getenv("SUPABASE_URL", ""),
-            key=os.getenv("SUPABASE_KEY", ""),
+            url=_get_secret("SUPABASE_URL", ""),
+            key=_get_secret("SUPABASE_KEY", ""),
         ),
         product_hunt=ProductHuntConfig(
             api_token=os.getenv("PRODUCT_HUNT_API_TOKEN", ""),

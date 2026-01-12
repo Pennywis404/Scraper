@@ -95,12 +95,12 @@ def render_product_hunt_explorer():
         df = pd.DataFrame(filtered)
 
         # Select and rename columns
-        display_columns = ["name", "tagline", "business_type", "votes_count", "comments_count", "website"]
+        display_columns = ["name", "tagline", "business_type", "votes_count", "comments_count", "created_at", "website"]
         available_cols = [c for c in display_columns if c in df.columns]
         df_display = df[available_cols].copy()
 
         # Rename columns for display
-        df_display.columns = ["Name", "Tagline", "Type", "Votes", "Comments", "Website"][:len(available_cols)]
+        df_display.columns = ["Name", "Tagline", "Type", "Votes", "Comments", "Date", "Website"][:len(available_cols)]
 
         # Display table
         st.dataframe(
@@ -113,6 +113,7 @@ def render_product_hunt_explorer():
                 "Type": st.column_config.TextColumn("Type", width="small"),
                 "Votes": st.column_config.NumberColumn("👍 Votes", width="small"),
                 "Comments": st.column_config.NumberColumn("💬 Comments", width="small"),
+                "Date": st.column_config.DatetimeColumn("📅 Date", width="small", format="DD/MM/YYYY"),
                 "Website": st.column_config.LinkColumn("🔗 Website", width="medium"),
             }
         )

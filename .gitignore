@@ -1,5 +1,9 @@
 # Environment variables
 .env
+.streamlit/secrets.toml
+
+# MCP config (contains credentials)
+.mcp.json
 
 # Credentials (JSON service accounts, etc.)
 credentials/
