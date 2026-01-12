@@ -13,13 +13,53 @@ ROOT_DIR = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
 from config import get_config
-from database import init_database
+from database import init_database, ContactsRepository
+from datetime import date
 
 st.set_page_config(
     page_title="Explorer - Startup Scraper",
     page_icon="🔍",
     layout="wide"
 )
+
+
+def get_contacts_repo():
+    """Get or create contacts repository."""
+    if "contacts_repo" not in st.session_state:
+        st.session_state.contacts_repo = ContactsRepository()
+    return st.session_state.contacts_repo
+
+
+def render_contact_button(product_id: str, product_name: str, contacted_ids: set):
+    """Render contact button for a product."""
+    if product_id in contacted_ids:
+        st.success("✅ Déjà contacté")
+        return
+
+    with st.popover("📞 Marquer comme contacté"):
+        contacted_by = st.selectbox(
+            "Par qui ?",
+            ["Ethan", "Théo"],
+            key=f"contact_by_{product_id}"
+        )
+        contact_method = st.selectbox(
+            "Comment ?",
+            ["email", "linkedin", "twitter", "other"],
+            key=f"contact_method_{product_id}"
+        )
+        notes = st.text_input("Notes", key=f"contact_notes_{product_id}")
+
+        if st.button("✅ Confirmer", key=f"confirm_contact_{product_id}"):
+            repo = get_contacts_repo()
+            repo.add_contact(
+                startup_id=product_id,
+                contacted_by=contacted_by,
+                contacted_at=date.today(),
+                contact_method=contact_method,
+                notes=notes if notes else None
+            )
+            st.success(f"Contact enregistré pour {product_name}!")
+            st.rerun()
 
 
 def init_db():
@@ -66,6 +106,12 @@ def render_product_hunt_explorer():
 
         min_votes = st.slider("Minimum votes", 0, 500, 0)
 
+        contact_filter = st.selectbox(
+            "Statut contact",
+            ["Tous", "Non contactés", "Déjà contactés"],
+            key="ph_contact_filter"
+        )
+
     # Load and filter data
     products = get_all_products()
 
@@ -83,6 +129,15 @@ def render_product_hunt_explorer():
     # Apply min votes filter
     if min_votes > 0:
         filtered = [p for p in filtered if p.get("votes_count", 0) >= min_votes]
+
+    # Apply contact filter
+    if contact_filter != "Tous":
+        contacts_repo_filter = get_contacts_repo()
+        contacted_ids_filter = contacts_repo_filter.get_contacted_startup_ids()
+        if contact_filter == "Non contactés":
+            filtered = [p for p in filtered if p.get("id") not in contacted_ids_filter]
+        elif contact_filter == "Déjà contactés":
+            filtered = [p for p in filtered if p.get("id") in contacted_ids_filter]
 
     # Sort
     filtered = sort_products(filtered, sort_by, ascending=(sort_order == "Ascending"))
@@ -121,8 +176,15 @@ def render_product_hunt_explorer():
         # Expandable product details
         st.subheader("📋 Product Details")
 
+        # Get contacted IDs for badge display
+        contacts_repo = get_contacts_repo()
+        contacted_ids = contacts_repo.get_contacted_startup_ids()
+
         for product in filtered[:20]:  # Limit to avoid performance issues
-            with st.expander(f"{product.get('name', 'N/A')} - {product.get('business_type', 'N/A')}"):
+            product_id = product.get("id", "")
+            is_contacted = product_id in contacted_ids
+            contact_badge = " ✅" if is_contacted else ""
+            with st.expander(f"{product.get('name', 'N/A')} - {product.get('business_type', 'N/A')}{contact_badge}"):
                 col1, col2 = st.columns([2, 1])
 
                 with col1:
@@ -155,6 +217,10 @@ def render_product_hunt_explorer():
                     if product.get("classification_reason"):
                         st.info(f"**Why {product.get('business_type')}:** {product.get('classification_reason')}")
 
+                # Contact button
+                st.divider()
+                render_contact_button(product_id, product.get('name', 'N/A'), contacted_ids)
+
 
 def render_indie_hackers_explorer():
     """Render Indie Hackers products explorer."""
@@ -166,12 +232,18 @@ def render_indie_hackers_explorer():
 
         search = st.text_input("Search", placeholder="Product name...", key="indie_search")
 
+        business_type = st.selectbox(
+            "Business Type",
+            ["All", "B2B", "B2C", "UNKNOWN"],
+            key="indie_business_type"
+        )
+
         verified_only = st.checkbox("Stripe verified only", value=False)
 
         sort_by = st.selectbox(
             "Sort by",
-            ["revenue", "name"],
-            format_func=lambda x: {"revenue": "Revenue", "name": "Name"}.get(x, x),
+            ["revenue", "name", "scraped_at"],
+            format_func=lambda x: {"revenue": "Revenue", "name": "Name", "scraped_at": "Date"}.get(x, x),
             key="indie_sort"
         )
 
@@ -181,13 +253,14 @@ def render_indie_hackers_explorer():
     products = get_indie_products(use_cache=True)
 
     if not products:
-        st.warning("No Indie Hackers data in cache. Go to Settings to scrape fresh data!")
+        st.warning("No Indie Hackers data found. Go to Settings to scrape fresh data!")
         return
 
     # Apply filters
     filtered = filter_products(
         products,
         search=search,
+        business_type=None if business_type == "All" else business_type,
         verified_only=verified_only
     )
 
@@ -201,8 +274,8 @@ def render_indie_hackers_explorer():
     if filtered:
         df = pd.DataFrame(filtered)
 
-        # Select columns for Indie Hackers
-        display_columns = ["name", "tagline", "revenue", "stripe_verified", "url"]
+        # Select columns for Indie Hackers (now includes business_type)
+        display_columns = ["name", "tagline", "business_type", "revenue", "stripe_verified", "url"]
         available_cols = [c for c in display_columns if c in df.columns]
         df_display = df[available_cols].copy()
 
@@ -211,7 +284,7 @@ def render_indie_hackers_explorer():
             df_display["_revenue_num"] = df_display["revenue"].apply(parse_revenue)
 
         # Rename columns
-        col_names = ["Name", "Tagline", "Revenue", "Verified", "Link"][:len(available_cols)]
+        col_names = ["Name", "Tagline", "Type", "Revenue", "Verified", "Link"][:len(available_cols)]
         df_display.columns = col_names + (["_rev"] if "revenue" in display_columns else [])
 
         # Display
@@ -222,6 +295,7 @@ def render_indie_hackers_explorer():
             column_config={
                 "Name": st.column_config.TextColumn("Name", width="medium"),
                 "Tagline": st.column_config.TextColumn("Tagline", width="large"),
+                "Type": st.column_config.TextColumn("Type", width="small"),
                 "Revenue": st.column_config.TextColumn("💰 Revenue", width="small"),
                 "Verified": st.column_config.CheckboxColumn("✅ Verified", width="small"),
                 "Link": st.column_config.LinkColumn("🔗 Link", width="medium"),
@@ -235,7 +309,9 @@ def render_indie_hackers_explorer():
         for i, product in enumerate(filtered[:20]):
             with cols[i % 2]:
                 with st.container():
-                    st.markdown(f"### {product.get('name', 'N/A')}")
+                    btype = product.get('business_type', 'UNKNOWN')
+                    type_badge = "🏢 B2B" if btype == "B2B" else ("🛍️ B2C" if btype == "B2C" else "❓")
+                    st.markdown(f"### {product.get('name', 'N/A')} {type_badge}")
                     st.caption(product.get('tagline', ''))
 
                     col1, col2 = st.columns(2)
@@ -246,6 +322,10 @@ def render_indie_hackers_explorer():
                     with col2:
                         verified = "✅ Yes" if product.get("stripe_verified") else "❌ No"
                         st.metric("Stripe Verified", verified)
+
+                    # Classification reason
+                    if product.get("classification_reason"):
+                        st.info(f"**Why {btype}:** {product.get('classification_reason')}")
 
                     if product.get("url"):
                         st.link_button("View on Indie Hackers", product.get("url"), use_container_width=True)

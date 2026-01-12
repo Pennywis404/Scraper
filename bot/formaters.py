@@ -100,11 +100,28 @@ def format_indie_stats(stats: dict) -> str:
     lines = [
         "🚀 *INDIE HACKERS SCRAPE*",
         "",
-        f"🔍 Products scraped: `{stats.get('scraped', 0)}`",
-        f"📤 Exported to sheet: `{stats.get('exported', 0)}`",
-        "",
-        "📋 Sheet: `Indie Hackers`",
+        f"🔍 *Scraping*",
+        f"   Products found: `{stats.get('scraped', 0)}`",
+        f"   Stored in DB: `{stats.get('stored', 0)}`",
     ]
+
+    # Classification stats
+    if stats.get("classified", 0) > 0:
+        b2b = stats.get('b2b_count', 0)
+        b2c = stats.get('b2c_count', 0)
+        total = b2b + b2c
+
+        lines.append("")
+        lines.append(f"🏷️ *Classification*")
+        lines.append(f"   🏢 B2B: `{b2b}` {_progress_bar(b2b, total)}")
+        lines.append(f"   🛍️ B2C: `{b2c}` {_progress_bar(b2c, total)}")
+
+    # Export stats
+    if stats.get("exported", 0) > 0:
+        lines.append("")
+        lines.append(f"📤 *Export*")
+        lines.append(f"   Google Sheets: `{stats.get('exported', 0)}`")
+
     return "\n".join(lines)
 
 
@@ -135,7 +152,9 @@ Product Hunt:
 
 Indie Hackers:
   1. Scrape website
-  2. Export to Sheets
+  2. Store in Supabase
+  3. Classify B2B/B2C
+  4. Export to Sheets
 """
 
 

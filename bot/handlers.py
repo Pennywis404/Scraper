@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import get_config
-from database import init_database, LaunchesRepository
+from database import init_database, LaunchesRepository, IndieProductsRepository
 from scraper import ProductHuntClient, IndieHackersClient
 from agents import WorkflowSupervisor, ClassifierAgent, GoogleSheetsExporter
 from bot.formaters import (
@@ -261,6 +261,7 @@ async def indie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         config = get_config()
+        init_database(config.supabase.url, config.supabase.key)
 
         await send_status(f"🔍 Fetching {limit} products...")
 
@@ -269,6 +270,35 @@ async def indie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             products = await scraper.get_products(limit=limit)
             await send_status(f"✅ {len(products)} products found")
+
+            # Store in Supabase
+            await send_status("💾 Storing in database...")
+            indie_repo = IndieProductsRepository()
+            stored = await indie_repo.insert_products(products)
+            await send_status(f"✅ {stored} products stored in database")
+
+            # Classify unclassified products
+            await send_status("🤖 Classifying B2B/B2C...")
+            classifier = ClassifierAgent(api_key=config.groq.api_key)
+            unclassified = await indie_repo.get_unclassified()
+
+            b2b_count = 0
+            b2c_count = 0
+            for product in unclassified:
+                business_type, reason = await classifier.classify(
+                    name=product.get("name", ""),
+                    tagline=product.get("tagline", ""),
+                    description=product.get("tagline", ""),  # Use tagline as description
+                )
+                await indie_repo.update_classification(
+                    product.get("id"), business_type, reason
+                )
+                if business_type.value == "B2B":
+                    b2b_count += 1
+                elif business_type.value == "B2C":
+                    b2c_count += 1
+
+            await send_status(f"✅ Classified: {b2b_count} B2B, {b2c_count} B2C")
 
             await send_status("📊 Exporting to Google Sheets...")
 
@@ -288,6 +318,10 @@ async def indie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             stats = {
                 "scraped": len(products),
+                "stored": stored,
+                "classified": len(unclassified),
+                "b2b_count": b2b_count,
+                "b2c_count": b2c_count,
                 "exported": exported,
             }
 

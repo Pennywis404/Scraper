@@ -54,6 +54,12 @@ def _get_repo():
     return LaunchesRepository()
 
 
+def _get_indie_repo():
+    """Get the indie products repository."""
+    from database.repositories.indie import IndieProductsRepository
+    return IndieProductsRepository()
+
+
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_quick_stats() -> dict:
     """Get quick stats for sidebar display."""
@@ -146,38 +152,87 @@ def get_products_by_type(business_type: str) -> list[dict]:
         return []
 
 
+@st.cache_data(ttl=60)
 def get_indie_products(limit: int = 50, use_cache: bool = True) -> list[dict]:
     """
-    Get Indie Hackers products.
-    Uses session cache if available, otherwise scrapes fresh.
+    Get Indie Hackers products from Supabase.
+    Falls back to session cache if database is empty.
     """
-    # Check cache first
+    try:
+        import asyncio
+        repo = _get_indie_repo()
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            products = loop.run_until_complete(repo.get_all())
+        finally:
+            loop.close()
+
+        if products:
+            # Add source field
+            for p in products:
+                p["_source"] = "Indie Hackers"
+            return products[:limit]
+
+    except Exception as e:
+        st.warning(f"Could not load from database: {e}")
+
+    # Fallback to session cache
     if use_cache and st.session_state.get("indie_cache"):
         return st.session_state.indie_cache[:limit]
 
-    return []  # Return empty if no cache - scraping should be done via Settings page
+    return []
 
 
 async def scrape_indie_products_async(limit: int = 50) -> list[dict]:
-    """Scrape fresh Indie Hackers products (async)."""
+    """Scrape fresh Indie Hackers products and store in Supabase."""
     from scraper.indiehackers import IndieHackersClient
 
     client = IndieHackersClient(headless=True)
     try:
         products = await client.get_products(limit=limit)
+
+        # Store in Supabase
+        repo = _get_indie_repo()
+        stored_count = await repo.insert_products(products)
+
         products_list = [p.to_dict() for p in products]
 
         # Add source field
         for p in products_list:
             p["_source"] = "Indie Hackers"
 
-        # Update cache
+        # Update cache as backup
         st.session_state.indie_cache = products_list
         st.session_state.last_indie_scrape = datetime.now()
+
+        # Clear the Streamlit cache to refresh data
+        get_indie_products.clear()
 
         return products_list
     finally:
         await client.close()
+
+
+@st.cache_data(ttl=300)
+def get_indie_stats() -> dict:
+    """Get Indie Hackers statistics."""
+    try:
+        import asyncio
+        repo = _get_indie_repo()
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            stats = loop.run_until_complete(repo.get_stats())
+        finally:
+            loop.close()
+
+        return stats
+    except Exception as e:
+        st.error(f"Error loading indie stats: {e}")
+        return {"total": 0, "b2b": 0, "b2c": 0, "unknown": 0, "verified": 0}
 
 
 def parse_revenue(revenue_str: str) -> int:
