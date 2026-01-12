@@ -15,12 +15,15 @@ load_dotenv(ROOT_DIR / ".env", override=True)
 def _get_secret(key: str, default: str = "") -> str:
     """Get secret from Streamlit secrets or environment variables."""
     # Try Streamlit secrets first (for Streamlit Cloud)
-    try:
-        import streamlit as st
-        if hasattr(st, "secrets") and key in st.secrets:
-            return st.secrets[key]
-    except Exception:
-        pass
+    # Only attempt if streamlit is already loaded (avoid import conflicts with telegram bot)
+    import sys
+    if "streamlit" in sys.modules:
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets") and key in st.secrets:
+                return st.secrets[key]
+        except Exception:
+            pass
     # Fallback to environment variable
     return os.getenv(key, default)
 
