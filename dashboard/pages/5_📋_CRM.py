@@ -136,7 +136,11 @@ with tab2:
 
     # Get startups not yet contacted
     contacted_ids = contacts_repo.get_contacted_startup_ids()
-    all_startups = launches_repo.get_recent(limit=500)
+    # Get all startups (synchronous wrapper needed)
+    import asyncio
+    loop = asyncio.new_event_loop()
+    all_startups = loop.run_until_complete(launches_repo.get_all())
+    loop.close()
     available_startups = [s for s in all_startups if s["id"] not in contacted_ids]
 
     if not available_startups:

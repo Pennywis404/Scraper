@@ -232,12 +232,6 @@ def render_indie_hackers_explorer():
 
         search = st.text_input("Search", placeholder="Product name...", key="indie_search")
 
-        business_type = st.selectbox(
-            "Business Type",
-            ["All", "B2B", "B2C", "UNKNOWN"],
-            key="indie_business_type"
-        )
-
         verified_only = st.checkbox("Stripe verified only", value=False)
 
         sort_by = st.selectbox(
@@ -260,7 +254,6 @@ def render_indie_hackers_explorer():
     filtered = filter_products(
         products,
         search=search,
-        business_type=None if business_type == "All" else business_type,
         verified_only=verified_only
     )
 
@@ -274,8 +267,8 @@ def render_indie_hackers_explorer():
     if filtered:
         df = pd.DataFrame(filtered)
 
-        # Select columns for Indie Hackers (now includes business_type)
-        display_columns = ["name", "tagline", "business_type", "revenue", "stripe_verified", "url"]
+        # Select columns for Indie Hackers
+        display_columns = ["name", "tagline", "revenue", "stripe_verified", "url"]
         available_cols = [c for c in display_columns if c in df.columns]
         df_display = df[available_cols].copy()
 
@@ -284,7 +277,7 @@ def render_indie_hackers_explorer():
             df_display["_revenue_num"] = df_display["revenue"].apply(parse_revenue)
 
         # Rename columns
-        col_names = ["Name", "Tagline", "Type", "Revenue", "Verified", "Link"][:len(available_cols)]
+        col_names = ["Name", "Tagline", "Revenue", "Verified", "Link"][:len(available_cols)]
         df_display.columns = col_names + (["_rev"] if "revenue" in display_columns else [])
 
         # Display
@@ -295,7 +288,6 @@ def render_indie_hackers_explorer():
             column_config={
                 "Name": st.column_config.TextColumn("Name", width="medium"),
                 "Tagline": st.column_config.TextColumn("Tagline", width="large"),
-                "Type": st.column_config.TextColumn("Type", width="small"),
                 "Revenue": st.column_config.TextColumn("💰 Revenue", width="small"),
                 "Verified": st.column_config.CheckboxColumn("✅ Verified", width="small"),
                 "Link": st.column_config.LinkColumn("🔗 Link", width="medium"),
@@ -309,9 +301,7 @@ def render_indie_hackers_explorer():
         for i, product in enumerate(filtered[:20]):
             with cols[i % 2]:
                 with st.container():
-                    btype = product.get('business_type', 'UNKNOWN')
-                    type_badge = "🏢 B2B" if btype == "B2B" else ("🛍️ B2C" if btype == "B2C" else "❓")
-                    st.markdown(f"### {product.get('name', 'N/A')} {type_badge}")
+                    st.markdown(f"### {product.get('name', 'N/A')}")
                     st.caption(product.get('tagline', ''))
 
                     col1, col2 = st.columns(2)
@@ -322,10 +312,6 @@ def render_indie_hackers_explorer():
                     with col2:
                         verified = "✅ Yes" if product.get("stripe_verified") else "❌ No"
                         st.metric("Stripe Verified", verified)
-
-                    # Classification reason
-                    if product.get("classification_reason"):
-                        st.info(f"**Why {btype}:** {product.get('classification_reason')}")
 
                     if product.get("url"):
                         st.link_button("View on Indie Hackers", product.get("url"), use_container_width=True)
