@@ -1,10 +1,10 @@
 name: Daily Scrape
 
 on:
-  # Exécution automatique tous les jours à 8h UTC (9h Paris)
+  # Exécution automatique tous les jours à 8h UTC (9h Paris hiver, 10h été)
   schedule:
     - cron: '0 8 * * *'
-  
+
   # Permet aussi de lancer manuellement depuis GitHub
   workflow_dispatch:
     inputs:
@@ -12,11 +12,20 @@ on:
         description: 'Number of products to scrape'
         required: false
         default: '50'
+      source:
+        description: 'Source to scrape'
+        required: false
+        default: 'ph'
+        type: choice
+        options:
+          - ph
+          - ih
+          - all
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,66 +34,32 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           playwright install chromium
 
-      - name: Create credentials file
+      - name: Create Google credentials file
         run: |
           mkdir -p credentials
           echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > credentials/google_sheets.json
 
-      - name: Run Product Hunt scrape
+      - name: Run scraper
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           PRODUCT_HUNT_API_TOKEN: ${{ secrets.PRODUCT_HUNT_API_TOKEN }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GOOGLE_SHEETS_CREDENTIALS_PATH: credentials/google_sheets.json
+          API_BASE_URL: https://api.producthunt.com/v2/api/graphql
+          RATE_LIMIT_DELAY: 1
         run: |
-          python -c "
-          import asyncio
-          from config import get_config
-          from database import init_database, LaunchesRepository
-          from scraper import ProductHuntClient
-          from agents import WorkflowSupervisor, ClassifierAgent, GoogleSheetsExporter
-
-          async def main():
-              config = get_config()
-              init_database(config.supabase.url, config.supabase.key)
-              
-              scraper = ProductHuntClient(
-                  api_token=config.product_hunt.api_token,
-                  base_url=config.product_hunt.api_base_url,
-              )
-              
-              repository = LaunchesRepository()
-              classifier = ClassifierAgent(api_key=config.groq.api_key)
-              sheets = GoogleSheetsExporter(
-                  credentials=config.google_sheets.credentials,
-                  spreadsheet_id=config.google_sheets.spreadsheet_id,
-              )
-              
-              supervisor = WorkflowSupervisor(
-                  scraper=scraper,
-                  repository=repository,
-                  classifier=classifier,
-                  sheets_exporter=sheets,
-              )
-              
-              stats = await supervisor.run(
-                  limit=${{ github.event.inputs.limit || 50 }},
-                  spreadsheet_id=config.google_sheets.spreadsheet_id,
-              )
-              
-              print(f'Scraped: {stats}')
-              await scraper.close()
-
-          asyncio.run(main())
-          "
+          python main.py --scrape \
+            --limit ${{ github.event.inputs.limit || 50 }} \
+            --source ${{ github.event.inputs.source || 'ph' }}
 
       - name: Send Telegram notification
         if: always()
@@ -93,11 +68,11 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ "${{ job.status }}" == "success" ]; then
-            MESSAGE="✅ Daily scrape completed successfully!"
+            MESSAGE="✅ Daily scrape completed! ($(date '+%Y-%m-%d'))"
           else
-            MESSAGE="❌ Daily scrape failed. Check GitHub Actions logs."
+            MESSAGE="❌ Daily scrape failed. Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi
-          
+
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             -d text="${MESSAGE}"
