@@ -5,6 +5,18 @@ Multi-source product intelligence dashboard.
 """
 
 import streamlit as st
+
+# Page configuration - MUST be first Streamlit command
+st.set_page_config(
+    page_title="Startup Scraper",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        "About": "Startup Scraper Dashboard - Multi-source product intelligence"
+    }
+)
+
 import sys
 from pathlib import Path
 
@@ -38,17 +50,6 @@ def check_password():
                 st.error("Mot de passe incorrect")
         st.stop()
 
-
-# Page configuration
-st.set_page_config(
-    page_title="Startup Scraper",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        "About": "Startup Scraper Dashboard - Multi-source product intelligence"
-    }
-)
 
 # Custom CSS for better styling
 st.markdown("""
