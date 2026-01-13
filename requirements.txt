@@ -25,4 +25,3 @@ plotly==5.24.1
 pandas==2.2.2
 
 # Web Scraping (IndieHackers)
-playwright==1.57.0
