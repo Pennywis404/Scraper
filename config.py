@@ -78,10 +78,8 @@ def _load_json_credentials(relative_path: str) -> dict:
     """Load JSON credentials from a file path relative to project root."""
     full_path = ROOT_DIR / relative_path
     if not full_path.exists():
-        raise FileNotFoundError(
-            f"Credentials file not found: {full_path}\n"
-            f"Please place your Google Sheets service account JSON at: {relative_path}"
-        )
+        # Return empty dict instead of crashing (for Streamlit Cloud)
+        return {}
     with open(full_path, "r") as f:
         return json.load(f)
 
