@@ -28,29 +28,6 @@ from config import get_config
 from database import init_database
 
 
-def check_password():
-    """Simple password protection for the app."""
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-
-    if not st.session_state.authenticated:
-        st.title("🔐 Startup Scraper")
-        password = st.text_input("Mot de passe", type="password")
-        if st.button("Se connecter"):
-            try:
-                app_password = st.secrets.get("APP_PASSWORD", "")
-            except Exception:
-                import os
-                app_password = os.getenv("APP_PASSWORD", "")
-
-            if password == app_password:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Mot de passe incorrect")
-        st.stop()
-
-
 # Custom CSS for better styling
 st.markdown("""
 <style>
@@ -147,7 +124,6 @@ def init_db():
 
 def main():
     """Main dashboard entry point."""
-    check_password()
     init_session_state()
 
     # Sidebar
