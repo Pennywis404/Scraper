@@ -75,10 +75,20 @@ class Config:
 
 
 def _load_json_credentials(relative_path: str) -> dict:
-    """Load JSON credentials from a file path relative to project root."""
+    """Load JSON credentials from file or Streamlit secrets."""
+    # Try Streamlit secrets first (for Streamlit Cloud)
+    import sys
+    if "streamlit" in sys.modules:
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets") and "google_sheets" in st.secrets:
+                return dict(st.secrets["google_sheets"])
+        except Exception:
+            pass
+
+    # Fallback to file
     full_path = ROOT_DIR / relative_path
     if not full_path.exists():
-        # Return empty dict instead of crashing (for Streamlit Cloud)
         return {}
     with open(full_path, "r") as f:
         return json.load(f)
@@ -88,32 +98,32 @@ def load_config() -> Config:
     """Load and validate all configuration."""
 
     # Google Sheets credentials path
-    gs_creds_path = os.getenv("GOOGLE_SHEETS_CREDENTIALS_PATH", "credentials/google_sheets.json")
+    gs_creds_path = _get_secret("GOOGLE_SHEETS_CREDENTIALS_PATH", "credentials/google_sheets.json")
 
     return Config(
         telegram=TelegramConfig(
-            bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+            bot_token=_get_secret("TELEGRAM_BOT_TOKEN", ""),
         ),
         groq=GroqConfig(
-            api_key=os.getenv("GROQ_API_KEY", ""),
+            api_key=_get_secret("GROQ_API_KEY", ""),
         ),
         gemini=GeminiConfig(
-            api_key=os.getenv("GEMINI_API_CENTRAL_KEY", ""),
+            api_key=_get_secret("GEMINI_API_CENTRAL_KEY", ""),
         ),
         supabase=SupabaseConfig(
             url=_get_secret("SUPABASE_URL", ""),
             key=_get_secret("SUPABASE_KEY", ""),
         ),
         product_hunt=ProductHuntConfig(
-            api_token=os.getenv("PRODUCT_HUNT_API_TOKEN", ""),
-            api_base_url=os.getenv("API_BASE_URL", "https://api.producthunt.com/v2/api/graphql"),
-            rate_limit_delay=int(os.getenv("RATE_LIMIT_DELAY", "1")),
-            output_dir=os.getenv("OUTPUT_DIR", "data"),
+            api_token=_get_secret("PRODUCT_HUNT_API_TOKEN", ""),
+            api_base_url=_get_secret("API_BASE_URL", "https://api.producthunt.com/v2/api/graphql"),
+            rate_limit_delay=int(_get_secret("RATE_LIMIT_DELAY", "1")),
+            output_dir=_get_secret("OUTPUT_DIR", "data"),
         ),
         google_sheets=GoogleSheetsConfig(
             credentials_path=ROOT_DIR / gs_creds_path,
             credentials=_load_json_credentials(gs_creds_path),
-            spreadsheet_id=os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID"),
+            spreadsheet_id=_get_secret("GOOGLE_SHEETS_SPREADSHEET_ID", ""),
         ),
     )
 
