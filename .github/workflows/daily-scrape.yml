@@ -39,7 +39,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          python -m playwright install chromium
+          pip install playwright
+          python -m playwright install chromium --with-deps
 
       - name: Create Google credentials file
         run: |
