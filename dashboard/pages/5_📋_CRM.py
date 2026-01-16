@@ -66,6 +66,9 @@ for startup in all_startups:
 
 df = pd.DataFrame(data)
 
+# Convert contacted_at to datetime for proper editing
+df["contacted_at"] = pd.to_datetime(df["contacted_at"], errors="coerce").dt.date
+
 # Sidebar filters
 st.sidebar.subheader("Filtres")
 
