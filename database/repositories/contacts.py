@@ -19,6 +19,7 @@ class ContactsRepository:
         contacted_by: str,
         contacted_at: Optional[date] = None,
         contact_method: Optional[str] = None,
+        contact_info: Optional[str] = None,
         notes: Optional[str] = None,
         status: str = "contacted"
     ) -> dict:
@@ -32,6 +33,8 @@ class ContactsRepository:
             data["contacted_at"] = contacted_at.isoformat()
         if contact_method:
             data["contact_method"] = contact_method
+        if contact_info:
+            data["contact_info"] = contact_info
         if notes:
             data["notes"] = notes
 
@@ -119,3 +122,32 @@ class ContactsRepository:
         """Get set of all contacted startup IDs."""
         result = self.db.table(self.TABLE).select("startup_id").execute()
         return {r["startup_id"] for r in result.data}
+
+    def bulk_upsert_contacts(self, contacts: List[dict]) -> List[dict]:
+        """Bulk upsert multiple contact records."""
+        if not contacts:
+            return []
+
+        # Prepare data for upsert
+        prepared = []
+        for contact in contacts:
+            data = {
+                "startup_id": contact["startup_id"],
+                "contacted_by": contact.get("contacted_by", "Théo"),
+                "status": contact.get("status", "to_contact"),
+            }
+            if contact.get("contacted_at"):
+                if isinstance(contact["contacted_at"], date):
+                    data["contacted_at"] = contact["contacted_at"].isoformat()
+                else:
+                    data["contacted_at"] = contact["contacted_at"]
+            if contact.get("contact_method"):
+                data["contact_method"] = contact["contact_method"]
+            if contact.get("contact_info"):
+                data["contact_info"] = contact["contact_info"]
+            if contact.get("notes"):
+                data["notes"] = contact["notes"]
+            prepared.append(data)
+
+        result = self.db.table(self.TABLE).upsert(prepared, on_conflict="startup_id").execute()
+        return result.data
