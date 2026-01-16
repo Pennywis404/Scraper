@@ -29,6 +29,7 @@ launches_repo = LaunchesRepository()
 CONTACT_METHODS = ["", "email", "linkedin", "instagram", "phone", "twitter", "other"]
 STATUSES = ["to_contact", "contacted", "responded", "meeting", "not_interested", "converted"]
 CONTACTED_BY = ["Théo", "Ethan"]
+BUSINESS_TYPES = ["B2B", "B2C", "UNKNOWN"]
 
 # Get all data
 import asyncio
@@ -44,11 +45,17 @@ contacts_map = {c["startup_id"]: c for c in existing_contacts}
 data = []
 for startup in all_startups:
     contact = contacts_map.get(startup["id"], {})
+    # Parse scraped date
+    scraped_date = startup.get("featured_at") or startup.get("created_at")
+    if scraped_date and isinstance(scraped_date, str):
+        scraped_date = scraped_date[:10]  # Keep only YYYY-MM-DD
     data.append({
         "startup_id": startup["id"],
         "name": startup.get("name", ""),
         "tagline": startup.get("tagline", "")[:80] if startup.get("tagline") else "",
         "website": startup.get("website", ""),
+        "business_type": startup.get("business_type", "UNKNOWN"),
+        "scraped_at": scraped_date,
         "contact_method": contact.get("contact_method", ""),
         "contact_info": contact.get("contact_info", ""),
         "status": contact.get("status", "to_contact"),
@@ -61,6 +68,12 @@ df = pd.DataFrame(data)
 
 # Sidebar filters
 st.sidebar.subheader("Filtres")
+
+filter_business_type = st.sidebar.multiselect(
+    "Type",
+    options=BUSINESS_TYPES,
+    default=[]
+)
 
 filter_status = st.sidebar.multiselect(
     "Statut",
@@ -79,10 +92,28 @@ filter_person = st.sidebar.selectbox(
     ["Tous", "Théo", "Ethan", "Non assigné"]
 )
 
+# Date filter
+st.sidebar.subheader("Date de scrapping")
+if len(df) > 0 and df["scraped_at"].notna().any():
+    dates = pd.to_datetime(df["scraped_at"].dropna()).dt.date
+    min_date = dates.min()
+    max_date = dates.max()
+    date_range = st.sidebar.date_input(
+        "Période",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date
+    )
+else:
+    date_range = None
+
 search_query = st.sidebar.text_input("Rechercher", placeholder="Nom de startup...")
 
 # Apply filters
 filtered_df = df.copy()
+
+if filter_business_type:
+    filtered_df = filtered_df[filtered_df["business_type"].isin(filter_business_type)]
 
 if filter_status:
     filtered_df = filtered_df[filtered_df["status"].isin(filter_status)]
@@ -94,6 +125,16 @@ if filter_person == "Non assigné":
     filtered_df = filtered_df[filtered_df["contacted_by"] == ""]
 elif filter_person != "Tous":
     filtered_df = filtered_df[filtered_df["contacted_by"] == filter_person]
+
+# Date range filter
+if date_range and len(date_range) == 2:
+    start_date, end_date = date_range
+    filtered_df["scraped_date_parsed"] = pd.to_datetime(filtered_df["scraped_at"], errors="coerce").dt.date
+    filtered_df = filtered_df[
+        (filtered_df["scraped_date_parsed"] >= start_date) &
+        (filtered_df["scraped_date_parsed"] <= end_date)
+    ]
+    filtered_df = filtered_df.drop(columns=["scraped_date_parsed"])
 
 if search_query:
     filtered_df = filtered_df[
@@ -155,6 +196,16 @@ column_config = {
         width="medium",
         disabled=True
     ),
+    "business_type": st.column_config.TextColumn(
+        "Type",
+        width="small",
+        disabled=True
+    ),
+    "scraped_at": st.column_config.TextColumn(
+        "Scrappé",
+        width="small",
+        disabled=True
+    ),
     "tagline": st.column_config.TextColumn(
         "Description",
         width="large",
@@ -186,7 +237,7 @@ column_config = {
         width="small"
     ),
     "contacted_at": st.column_config.DateColumn(
-        "Date",
+        "Date contact",
         width="small"
     ),
     "notes": st.column_config.TextColumn(
@@ -196,7 +247,7 @@ column_config = {
 }
 
 # Display order
-display_columns = ["name", "tagline", "website", "contact_method", "contact_info", "status", "contacted_by", "contacted_at", "notes", "startup_id"]
+display_columns = ["name", "business_type", "scraped_at", "tagline", "website", "contact_method", "contact_info", "status", "contacted_by", "contacted_at", "notes", "startup_id"]
 
 edited_df = st.data_editor(
     filtered_df[display_columns],
